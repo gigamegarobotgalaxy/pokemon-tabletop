@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pokémon Tabletop Tracker (Single Player)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; background:#f6f7fb; }
+    h1 { margin: 0 0 6px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    h3 { margin: 0 0 8px; font-size: 14px; }
+    .muted { color:#5b657a; font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+    .grid { display:grid; gap:12px; }
+    @media (min-width: 980px) { .grid { grid-template-columns: 420px 1fr; } }
+    .card { background:white; border-radius:14px; padding:12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+    button { border:0; border-radius:10px; padding:8px 10px; cursor:pointer; background:#2d6cdf; color:white; }
+    button.secondary { background:#e9eefc; color:#1b2b52; }
+    button.danger { background:#e54b4b; }
+    button.ghost { background:transparent; color:#1b2b52; border:1px solid #ccd3e0; }
+    input, select, textarea { padding:8px; border-radius:10px; border:1px solid #ccd3e0; background:white; }
+    textarea { width:100%; min-height: 54px; resize: vertical; }
+    .stack { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .list { display:flex; flex-direction:column; gap:10px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#eef2ff; }
+    .chip { display:inline-flex; gap:6px; align-items:center; padding:6px 10px; border-radius:999px; border:1px solid #ccd3e0; cursor:pointer; user-select:none; }
+    .chip.active { background:#2d6cdf; color:white; border-color:#2d6cdf; }
+    .divider { border:none; border-top:1px solid #e6e9f2; margin:12px 0; }
+    .twoCol { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media (max-width: 520px) { .twoCol { grid-template-columns: 1fr; } }
+
+    .checklist { display:flex; flex-direction:column; gap:8px; }
+    .checkItem { display:flex; gap:10px; align-items:center; padding:8px 10px; border-radius:12px; background:#fbfcff; border:1px solid #e6e9f2; }
+    .checkItem input[type="checkbox"] { width:18px; height:18px; }
+    .checkItem .meta { display:flex; flex-direction:column; }
+    .checkItem .meta .title { font-weight: 600; }
+    .checkItem .meta .sub { font-size: 12px; color:#5b657a; }
+
+    .pkCard { background:#fbfcff; border:1px solid #e6e9f2; border-radius:14px; padding:12px; }
+    .pkHead { display:flex; justify-content:space-between; gap:10px; }
+    .pkArtWrap { display:flex; gap:12px; align-items:flex-start; }
+    .pkArt {
+      width: 84px; height: 84px; border-radius: 14px;
+      background:#eef2ff; border:1px solid #ccd3e0;
+      object-fit: cover;
+    }
+    .pkTitle { font-weight: 700; }
+    .pkTypes { display:flex; gap:6px; flex-wrap:wrap; }
+    .typeTag { padding:4px 8px; border-radius:999px; border:1px solid #ccd3e0; background:white; font-size: 12px; }
+    .smallInputs input, .smallInputs select { padding:6px 8px; border-radius:10px; }
+    .battleGrid { display:grid; gap:12px; }
+    @media (min-width: 980px) { .battleGrid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Pokémon Tabletop Tracker</h1>
+  <div class="muted">
+    Single player • Salvataggio automatico in locale (localStorage) • Export/Import per backup o trasferimento.
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="grid">
+    <!-- Left column: identity + badges + cities + controls -->
+    <div class="card">
+      <h2>Profilo</h2>
+      <div class="stack">
+        <input id="playerName" placeholder="Nome Allenatore" style="flex:1;" />
+        <button class="secondary" id="saveNameBtn">Salva</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <h2>Medaglie</h2>
+      <div class="muted" style="margin-bottom:8px;">Spunta i capipalestra sconfitti.</div>
+      <div id="badgesList" class="checklist"></div>
+
+      <div class="divider"></div>
+
+      <h2>Città visitate</h2>
+      <div class="stack" style="margin-bottom:10px;">
+        <input id="newCityName" placeholder="Aggiungi città/luogo" style="flex:1;" />
+        <button class="secondary" id="addCityBtn">Aggiungi</button>
+      </div>
+      <div id="citiesList" class="checklist"></div>
+
+      <div class="divider"></div>
+
+      <div class="stack">
+        <button class="secondary" id="exportBtn">Export JSON</button>
+        <button class="secondary" id="importBtn">Import JSON</button>
+        <button class="danger" id="resetBtn">Reset</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json" style="display:none" />
+    </div>
+
+    <!-- Right column: team/items/tokens + battle mode -->
+    <div class="card">
+      <h2 id="mainTitle">Gestione partita</h2>
+
+      <div class="row">
+        <!-- Team -->
+        <div class="card" style="flex:1; min-width: 320px;">
+          <h2>Team Pokémon</h2>
+          <div class="muted" style="margin-bottom:8px;">Max 4 Pokémon.</div>
+
+          <div class="twoCol smallInputs" style="margin-bottom:10px;">
+            <input id="pkName" placeholder="Nome Pokémon" />
+            <input id="pkArtUrl" placeholder="Artwork URL (opzionale)" />
+
+            <select id="pkType1">
+              <option value="">Tipo 1</option>
+              <option>Grass</option><option>Fire</option><option>Water</option><option>Electric</option><option>Psychic</option>
+              <option>Ground</option><option>Normal</option><option>Flying</option><option>Dark</option><option>Steel</option>
+            </select>
+            <select id="pkType2">
+              <option value="">Tipo 2 (opzionale)</option>
+              <option>Grass</option><option>Fire</option><option>Water</option><option>Electric</option><option>Psychic</option>
+              <option>Ground</option><option>Normal</option><option>Flying</option><option>Dark</option><option>Steel</option>
+            </select>
+
+            <input id="pkHpMax" type="number" min="1" placeholder="HP max" />
+            <input id="pkAtk" type="number" min="0" placeholder="ATK" />
+            <input id="pkDef" type="number" min="0" placeholder="DEF" />
+            <input id="pkSpe" type="number" min="0" placeholder="SPE" />
+          </div>
+
+          <div class="stack" style="margin-bottom:10px;">
+            <button id="addPokemonBtn">Aggiungi Pokémon</button>
+            <button class="ghost" id="healAllBtn" title="Imposta HP correnti = HP max per tutto il team">Cura Team</button>
+          </div>
+
+          <div id="teamList" class="list"></div>
+        </div>
+
+        <!-- Bag -->
+        <div class="card" style="flex:1; min-width: 320px;">
+          <h2>Borsa</h2>
+          <div class="muted" style="margin-bottom:8px;">Strumenti in borsa: <b id="toolsCount">0</b> / 8 (Ball e Base non contano)</div>
+
+          <div class="stack" style="margin-bottom:10px;">
+            <input id="itemName" placeholder="Nome carta" style="flex:1;" />
+            <select id="itemCat">
+              <option value="STRUMENTO">Strumento</option>
+              <option value="BALL">Ball</option>
+              <option value="BASE">Base</option>
+            </select>
+            <input id="itemQty" type="number" min="1" value="1" style="width:90px;" />
+            <button id="addItemBtn">Aggiungi</button>
+          </div>
+
+          <div id="itemsList" class="list"></div>
+        </div>
+
+        <!-- Tokens -->
+        <div class="card" style="flex:1; min-width: 260px;">
+          <h2>Segnalini</h2>
+          <div class="stack" style="margin-bottom:10px;">
+            <input id="tokenName" placeholder="Nome segnalino" style="flex:1;" />
+            <button id="addTokenBtn">Aggiungi</button>
+          </div>
+          <div id="tokensList" class="list"></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Battle mode -->
+      <h2>Modalità Lotta</h2>
+      <div class="muted" style="margin-bottom:10px;">
+        Seleziona 1, 2 o 4 Pokémon in campo. Qui puoi gestire HP e status “in tempo reale” durante la lotta.
+      </div>
+
+      <div class="stack" style="margin-bottom:10px;">
+        <span class="pill">Pokémon in campo:</span>
+        <select id="battleSize">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+        </select>
+        <button class="secondary" id="syncBattleBtn" title="Aggiorna gli slot se hai cambiato team">Sync</button>
+      </div>
+
+      <div id="battleSlots" class="battleGrid"></div>
+    </div>
+  </div>
+
+<script>
+const STORAGE_KEY = "pokemon_tabletop_tracker_single_v2";
+
+const Statuses = [
+  { key: "poison", label: "Avvelenato" },
+  { key: "paralysis", label: "Paralizzato" },
+  { key: "sleep", label: "Addormentato" },
+  { key: "burn", label: "Scottato" },
+  { key: "freeze", label: "Congelato" },
+];
+
+// Kanto Gym Leaders in order
+const BadgeOrder = [
+  { key: "brock", label: "Brock", sub: "Plumbeopoli" },
+  { key: "misty", label: "Misty", sub: "Azzurropoli" },
+  { key: "surge", label: "Lt. Surge", sub: "Aranciopoli" },
+  { key: "erika", label: "Erika", sub: "Celestopoli" },
+  { key: "koga", label: "Koga", sub: "Fucsiapoli" },
+  { key: "sabrina", label: "Sabrina", sub: "Zafferanopoli" },
+  { key: "blaine", label: "Blaine", sub: "Isola Cannella" },
+  { key: "giovanni", label: "Giovanni", sub: "Smeraldopoli" },
+];
+
+// Cities baseline (you can add more)
+const DefaultCities = [
+  "Biancavilla",
+  "Smeraldopoli",
+  "Plumbeopoli",
+  "Celestopoli",
+  "Aranciopoli",
+  "Azzurropoli",
+  "Zafferanopoli",
+  "Lavandonia",
+  "Fucsiapoli",
+  "Isola Cannella"
+];
+
+function uid() {
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+function defaultState() {
+  const badges = {};
+  for (const b of BadgeOrder) badges[b.key] = false;
+
+  const cities = DefaultCities.map(name => ({ id: uid(), name, visited: false }));
+
+  return {
+    player: {
+      name: "Allenatore",
+      badges,
+      cities,
+      tokens: [
+        { id: uid(), name: "Scarpe da Corsa", qty: 0 },
+        { id: uid(), name: "Bicicletta", qty: 0 },
+      ],
+      items: [], // {id,name,category:'STRUMENTO'|'BALL'|'BASE', qty}
+      team: [],  // {id,name,artUrl,type1,type2,hpMax,hpCurrent,atk,def,spe,status,notes}
+      battle: {
+        size: 1,
+        slots: [null, null, null, null] // store pokemonId or null
+      }
+    }
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+
+    // basic migrations / safety
+    if (!parsed.player) return defaultState();
+    if (!parsed.player.badges) parsed.player.badges = {};
+    for (const b of BadgeOrder) {
+      if (typeof parsed.player.badges[b.key] !== "boolean") parsed.player.badges[b.key] = false;
+    }
+    if (!Array.isArray(parsed.player.cities)) parsed.player.cities = DefaultCities.map(n => ({ id: uid(), name: n, visited:false }));
+    if (!Array.isArray(parsed.player.tokens)) parsed.player.tokens = [];
+    if (!Array.isArray(parsed.player.items)) parsed.player.items = [];
+    if (!Array.isArray(parsed.player.team)) parsed.player.team = [];
+    if (!parsed.player.battle) parsed.player.battle = { size: 1, slots: [null,null,null,null] };
+    if (!Array.isArray(parsed.player.battle.slots)) parsed.player.battle.slots = [null,null,null,null];
+
+    return parsed;
+  } catch {
+    return defaultState();
+  }
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+let state = loadState();
+
+// DOM
+const $playerName = document.getElementById("playerName");
+const $badgesList = document.getElementById("badgesList");
+const $citiesList = document.getElementById("citiesList");
+const $newCityName = document.getElementById("newCityName");
+
+const $teamList = document.getElementById("teamList");
+const $itemsList = document.getElementById("itemsList");
+const $tokensList = document.getElementById("tokensList");
+const $toolsCount = document.getElementById("toolsCount");
+
+const $battleSize = document.getElementById("battleSize");
+const $battleSlots = document.getElementById("battleSlots");
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function computeToolsCount() {
+  return state.player.items
+    .filter(i => i.category === "STRUMENTO")
+    .reduce((sum, i) => sum + (Number(i.qty)||0), 0);
+}
+
+// Controls: profile name
+document.getElementById("saveNameBtn").addEventListener("click", () => {
+  state.player.name = $playerName.value.trim() || "Allenatore";
+  saveState();
+  render();
+});
+
+// Reset / export / import
+document.getElementById("resetBtn").addEventListener("click", () => {
+  if (!confirm("Vuoi davvero resettare tutto?")) return;
+  state = defaultState();
+  saveState();
+  render();
+});
+
+document.getElementById("exportBtn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pokemon-tracker-single.json";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+const importFile = document.getElementById("importFile");
+document.getElementById("importBtn").addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    if (!parsed || !parsed.player) throw new Error("Formato non valido");
+    state = parsed;
+    saveState();
+    render();
+  } catch (err) {
+    alert("Import fallito: " + err.message);
+  } finally {
+    importFile.value = "";
+  }
+});
+
+// Add city
+document.getElementById("addCityBtn").addEventListener("click", () => {
+  const name = $newCityName.value.trim();
+  if (!name) return;
+  state.player.cities.push({ id: uid(), name, visited: false });
+  $newCityName.value = "";
+  saveState();
+  render();
+});
+
+// Add pokemon
+document.getElementById("addPokemonBtn").addEventListener("click", () => {
+  const p = state.player;
+
+  if (p.team.length >= 4) return alert("Team pieno (max 4).");
+
+  const name = document.getElementById("pkName").value.trim();
+  const artUrl = document.getElementById("pkArtUrl").value.trim();
+  const type1 = document.getElementById("pkType1").value.trim();
+  const type2 = document.getElementById("pkType2").value.trim();
+
+  const hpMax = Number(document.getElementById("pkHpMax").value);
+  const atk = Number(document.getElementById("pkAtk").value);
+  const def = Number(document.getElementById("pkDef").value);
+  const spe = Number(document.getElementById("pkSpe").value);
+
+  if (!name) return alert("Inserisci il nome del Pokémon.");
+  if (!hpMax || hpMax <= 0) return alert("Inserisci HP max validi.");
+
+  const pk = {
+    id: uid(),
+    name,
+    artUrl: artUrl || "",
+    type1: type1 || "",
+    type2: type2 || "",
+    hpMax,
+    hpCurrent: hpMax,
+    atk: Number.isFinite(atk) ? atk : 0,
+    def: Number.isFinite(def) ? def : 0,
+    spe: Number.isFinite(spe) ? spe : 0,
+    status: { poison:false, paralysis:false, sleep:false, burn:false, freeze:false },
+    notes: ""
+  };
+
+  p.team.push(pk);
+
+  // clear inputs
+  document.getElementById("pkName").value = "";
+  document.getElementById("pkArtUrl").value = "";
+  document.getElementById("pkType1").value = "";
+  document.getElementById("pkType2").value = "";
+  document.getElementById("pkHpMax").value = "";
+  document.getElementById("pkAtk").value = "";
+  document.getElementById("pkDef").value = "";
+  document.getElementById("pkSpe").value = "";
+
+  // if battle slots empty, try auto-assign first free
+  autoFillBattleSlots();
+
+  saveState();
+  render();
+});
+
+document.getElementById("healAllBtn").addEventListener("click", () => {
+  for (const pk of state.player.team) pk.hpCurrent = pk.hpMax;
+  saveState();
+  render();
+});
+
+// Add item
+document.getElementById("addItemBtn").addEventListener("click", () => {
+  const name = document.getElementById("itemName").value.trim();
+  const category = document.getElementById("itemCat").value;
+  const qty = Math.max(1, Number(document.getElementById("itemQty").value) || 1);
+  if (!name) return;
+
+  const items = state.player.items;
+  const existing = items.find(i => i.name.toLowerCase() === name.toLowerCase() && i.category === category);
+  if (existing) existing.qty += qty;
+  else items.push({ id: uid(), name, category, qty });
+
+  document.getElementById("itemName").value = "";
+  document.getElementById("itemQty").value = 1;
+
+  saveState();
+  render();
+});
+
+// Add token
+document.getElementById("addTokenBtn").addEventListener("click", () => {
+  const name = document.getElementById("tokenName").value.trim();
+  if (!name) return;
+  state.player.tokens.push({ id: uid(), name, qty: 0 });
+  document.getElementById("tokenName").value = "";
+  saveState();
+  render();
+});
+
+// Battle size
+$battleSize.addEventListener("change", () => {
+  state.player.battle.size = Number($battleSize.value);
+  // ensure slots remain valid
+  cleanBattleSlots();
+  saveState();
+  render();
+});
+
+document.getElementById("syncBattleBtn").addEventListener("click", () => {
+  cleanBattleSlots();
+  autoFillBattleSlots();
+  saveState();
+  render();
+});
+
+// Helpers: battle slots integrity
+function teamIdsSet() {
+  return new Set(state.player.team.map(p => p.id));
+}
+
+function cleanBattleSlots() {
+  const valid = teamIdsSet();
+  for (let i = 0; i < 4; i++) {
+    const id = state.player.battle.slots[i];
+    if (id && !valid.has(id)) state.player.battle.slots[i] = null;
+  }
+  // avoid duplicates
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) {
+    const id = state.player.battle.slots[i];
+    if (!id) continue;
+    if (seen.has(id)) state.player.battle.slots[i] = null;
+    else seen.add(id);
+  }
+}
+
+function autoFillBattleSlots() {
+  const p = state.player;
+  const size = Number(p.battle.size) || 1;
+  const current = new Set(p.battle.slots.filter(Boolean));
+  const available = p.team.map(x => x.id).filter(id => !current.has(id));
+
+  for (let i = 0; i < size; i++) {
+    if (p.battle.slots[i]) continue;
+    const next = available.shift();
+    if (next) p.battle.slots[i] = next;
+  }
+}
+
+// Rendering
+function renderBadges() {
+  $badgesList.innerHTML = "";
+  for (const b of BadgeOrder) {
+    const row = document.createElement("div");
+    row.className = "checkItem";
+    const checked = !!state.player.badges[b.key];
+    row.innerHTML = `
+      <input type="checkbox" ${checked ? "checked" : ""} />
+      <div class="meta">
+        <div class="title">${b.label}</div>
+        <div class="sub">${b.sub}</div>
+      </div>
+    `;
+    row.querySelector("input").addEventListener("change", (e) => {
+      state.player.badges[b.key] = e.target.checked;
+      saveState();
+    });
+    $badgesList.appendChild(row);
+  }
+}
+
+function renderCities() {
+  $citiesList.innerHTML = "";
+  for (const c of state.player.cities) {
+    const row = document.createElement("div");
+    row.className = "checkItem";
+    row.innerHTML = `
+      <input type="checkbox" ${c.visited ? "checked" : ""} />
+      <div class="meta" style="flex:1;">
+        <div class="title">${c.name}</div>
+        <div class="sub">Visitata</div>
+      </div>
+      <button class="danger" title="Rimuovi">✕</button>
+    `;
+    row.querySelector("input").addEventListener("change", (e) => {
+      c.visited = e.target.checked;
+      saveState();
+    });
+    row.querySelector("button.danger").addEventListener("click", () => {
+      if (!confirm(`Rimuovere "${c.name}"?`)) return;
+      state.player.cities = state.player.cities.filter(x => x.id !== c.id);
+      saveState();
+      render();
+    });
+    $citiesList.appendChild(row);
+  }
+}
+
+function renderTeam() {
+  $teamList.innerHTML = "";
+  const team = state.player.team;
+
+  if (team.length === 0) {
+    $teamList.innerHTML = `<div class="muted">Nessun Pokémon nel team.</div>`;
+    return;
+  }
+
+  for (const pk of team) {
+    const div = document.createElement("div");
+    div.className = "pkCard";
+
+    const types = [];
+    if (pk.type1) types.push(pk.type1);
+    if (pk.type2) types.push(pk.type2);
+
+    div.innerHTML = `
+      <div class="pkHead">
+        <div class="pkArtWrap">
+          <img class="pkArt" src="${pk.artUrl || ""}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <div class="pkArt" style="display:${pk.artUrl ? "none" : "flex"}; align-items:center; justify-content:center;">
+            <span class="muted">no art</span>
+          </div>
+          <div>
+            <div class="pkTitle">${pk.name}</div>
+            <div class="pkTypes" style="margin-top:6px;">
+              ${types.length ? types.map(t => `<span class="typeTag">${t}</span>`).join("") : `<span class="muted">Tipo non impostato</span>`}
+            </div>
+            <div class="muted" style="margin-top:6px;">HP ${pk.hpCurrent}/${pk.hpMax} • ATK ${pk.atk} • DEF ${pk.def} • SPE ${pk.spe}</div>
+          </div>
+        </div>
+        <button class="danger" title="Rimuovi Pokémon">✕</button>
+      </div>
+
+      <div class="stack" style="margin:10px 0;">
+        <button class="secondary" data-d="-5">-5</button>
+        <button class="secondary" data-d="-1">-1</button>
+        <button class="secondary" data-d="+1">+1</button>
+        <button class="secondary" data-d="+5">+5</button>
+        <button class="secondary" data-d="KO">KO</button>
+        <button class="ghost" data-d="MAX">HP Max</button>
+      </div>
+
+      <div class="stack" style="margin:8px 0;">
+        <div class="muted">Status:</div>
+        <div class="stack" id="status-${pk.id}"></div>
+      </div>
+
+      <div class="twoCol smallInputs" style="margin:8px 0;">
+        <input id="edit-art-${pk.id}" placeholder="Artwork URL" value="${pk.artUrl || ""}" />
+        <input id="edit-name-${pk.id}" placeholder="Nome" value="${pk.name || ""}" />
+
+        <select id="edit-t1-${pk.id}">
+          <option value="">Tipo 1</option>
+          <option ${pk.type1==="Grass"?"selected":""}>Grass</option>
+          <option ${pk.type1==="Fire"?"selected":""}>Fire</option>
+          <option ${pk.type1==="Water"?"selected":""}>Water</option>
+          <option ${pk.type1==="Electric"?"selected":""}>Electric</option>
+          <option ${pk.type1==="Psychic"?"selected":""}>Psychic</option>
+          <option ${pk.type1==="Ground"?"selected":""}>Ground</option>
+          <option ${pk.type1==="Normal"?"selected":""}>Normal</option>
+          <option ${pk.type1==="Flying"?"selected":""}>Flying</option>
+          <option ${pk.type1==="Dark"?"selected":""}>Dark</option>
+          <option ${pk.type1==="Steel"?"selected":""}>Steel</option>
+        </select>
+
+        <select id="edit-t2-${pk.id}">
+          <option value="">Tipo 2</option>
+          <option ${pk.type2==="Grass"?"selected":""}>Grass</option>
+          <option ${pk.type2==="Fire"?"selected":""}>Fire</option>
+          <option ${pk.type2==="Water"?"selected":""}>Water</option>
+          <option ${pk.type2==="Electric"?"selected":""}>Electric</option>
+          <option ${pk.type2==="Psychic"?"selected":""}>Psychic</option>
+          <option ${pk.type2==="Ground"?"selected":""}>Ground</option>
+          <option ${pk.type2==="Normal"?"selected":""}>Normal</option>
+          <option ${pk.type2==="Flying"?"selected":""}>Flying</option>
+          <option ${pk.type2==="Dark"?"selected":""}>Dark</option>
+          <option ${pk.type2==="Steel"?"selected":""}>Steel</option>
+        </select>
+
+        <input id="edit-hp-${pk.id}" type="number" min="1" placeholder="HP max" value="${pk.hpMax}" />
+        <input id="edit-atk-${pk.id}" type="number" min="0" placeholder="ATK" value="${pk.atk}" />
+        <input id="edit-def-${pk.id}" type="number" min="0" placeholder="DEF" value="${pk.def}" />
+        <input id="edit-spe-${pk.id}" type="number" min="0" placeholder="SPE" value="${pk.spe}" />
+      </div>
+
+      <div class="stack" style="margin:8px 0;">
+        <button class="secondary" id="savePk-${pk.id}">Salva modifiche</button>
+        <span class="muted">Suggerimento: se cambi HP max, gli HP correnti vengono “clampati”.</span>
+      </div>
+
+      <div>
+        <div class="muted" style="margin-bottom:6px;">Note</div>
+        <textarea id="note-${pk.id}" placeholder="Note...">${pk.notes ?? ""}</textarea>
+      </div>
+    `;
+
+    // remove
+    div.querySelector("button.danger").addEventListener("click", () => {
+      if (!confirm(`Rimuovere ${pk.name}?`)) return;
+      state.player.team = state.player.team.filter(x => x.id !== pk.id);
+      // also clean battle assignments
+      cleanBattleSlots();
+      saveState();
+      render();
+    });
+
+    // HP buttons
+    div.querySelectorAll("button.secondary[data-d], button.ghost[data-d]").forEach(btn => {
+      const d = btn.getAttribute("data-d");
+      btn.addEventListener("click", () => {
+        if (d === "KO") pk.hpCurrent = 0;
+        else if (d === "MAX") pk.hpCurrent = pk.hpMax;
+        else {
+          const delta = Number(d);
+          pk.hpCurrent = clamp((Number(pk.hpCurrent)||0) + delta, 0, pk.hpMax);
+        }
+        saveState();
+        render();
+      });
+    });
+
+    // status chips
+    const statusWrap = div.querySelector(`#status-${pk.id}`);
+    statusWrap.innerHTML = "";
+    for (const s of Statuses) {
+      const chip = document.createElement("div");
+      chip.className = "chip" + (pk.status?.[s.key] ? " active" : "");
+      chip.textContent = s.label;
+      chip.addEventListener("click", () => {
+        pk.status[s.key] = !pk.status[s.key];
+        saveState();
+        render();
+      });
+      statusWrap.appendChild(chip);
+    }
+
+    // notes
+    div.querySelector(`#note-${pk.id}`).addEventListener("input", (e) => {
+      pk.notes = e.target.value;
+      saveState();
+    });
+
+    // save edits
+    div.querySelector(`#savePk-${pk.id}`).addEventListener("click", () => {
+      const newName = div.querySelector(`#edit-name-${pk.id}`).value.trim() || pk.name;
+      const newArt = div.querySelector(`#edit-art-${pk.id}`).value.trim();
+      const newT1 = div.querySelector(`#edit-t1-${pk.id}`).value.trim();
+      const newT2 = div.querySelector(`#edit-t2-${pk.id}`).value.trim();
+
+      const newHpMax = Number(div.querySelector(`#edit-hp-${pk.id}`).value);
+      const newAtk = Number(div.querySelector(`#edit-atk-${pk.id}`).value);
+      const newDef = Number(div.querySelector(`#edit-def-${pk.id}`).value);
+      const newSpe = Number(div.querySelector(`#edit-spe-${pk.id}`).value);
+
+      if (!newHpMax || newHpMax <= 0) return alert("HP max non validi.");
+
+      pk.name = newName;
+      pk.artUrl = newArt || "";
+      pk.type1 = newT1 || "";
+      pk.type2 = newT2 || "";
+
+      pk.hpMax = newHpMax;
+      pk.hpCurrent = clamp(pk.hpCurrent, 0, pk.hpMax);
+
+      pk.atk = Number.isFinite(newAtk) ? newAtk : pk.atk;
+      pk.def = Number.isFinite(newDef) ? newDef : pk.def;
+      pk.spe = Number.isFinite(newSpe) ? newSpe : pk.spe;
+
+      saveState();
+      render();
+    });
+
+    $teamList.appendChild(div);
+  }
+}
+
+function renderItems() {
+  $itemsList.innerHTML = "";
+  const items = state.player.items;
+
+  const toolsCount = computeToolsCount();
+  $toolsCount.textContent = toolsCount;
+
+  if (items.length === 0) {
+    $itemsList.innerHTML = `<div class="muted">Nessuna carta in borsa.</div>`;
+    return;
+  }
+
+  const sorted = [...items].sort((a,b) => (a.category+a.name).localeCompare(b.category+b.name));
+  for (const it of sorted) {
+    const div = document.createElement("div");
+    div.className = "pkCard";
+    div.innerHTML = `
+      <div class="stack" style="justify-content:space-between;">
+        <div>
+          <b>${it.name}</b>
+          <span class="pill mono">${it.category}</span>
+          <span class="muted">x${it.qty}</span>
+        </div>
+        <button class="danger" title="Rimuovi">✕</button>
+      </div>
+      <div class="stack" style="margin-top:8px;">
+        <button class="secondary">-</button>
+        <button class="secondary">+</button>
+      </div>
+      ${it.category === "STRUMENTO" && computeToolsCount() > 8 ? `<div class="muted" style="margin-top:8px;color:#b3261e;">⚠ Limite borsa superato (8). Considera di scartare.</div>` : ""}
+    `;
+    div.querySelector("button.danger").addEventListener("click", () => {
+      state.player.items = state.player.items.filter(x => x.id !== it.id);
+      saveState();
+      render();
+    });
+
+    const [minus, plus] = div.querySelectorAll("button.secondary");
+    minus.addEventListener("click", () => {
+      it.qty = Math.max(0, (Number(it.qty)||0) - 1);
+      if (it.qty === 0) state.player.items = state.player.items.filter(x => x.id !== it.id);
+      saveState();
+      render();
+    });
+    plus.addEventListener("click", () => {
+      it.qty = (Number(it.qty)||0) + 1;
+      saveState();
+      render();
+    });
+
+    $itemsList.appendChild(div);
+  }
+}
+
+function renderTokens() {
+  $tokensList.innerHTML = "";
+  const tokens = state.player.tokens;
+
+  if (tokens.length === 0) {
+    $tokensList.innerHTML = `<div class="muted">Nessun segnalino.</div>`;
+    return;
+  }
+
+  for (const t of tokens) {
+    const div = document.createElement("div");
+    div.className = "pkCard";
+    div.innerHTML = `
+      <div class="stack" style="justify-content:space-between;">
+        <div><b>${t.name}</b> <span class="muted">x${t.qty}</span></div>
+        <button class="danger" title="Rimuovi">✕</button>
+      </div>
+      <div class="stack" style="margin-top:8px;">
+        <button class="secondary">-</button>
+        <button class="secondary">+</button>
+      </div>
+    `;
+    div.querySelector("button.danger").addEventListener("click", () => {
+      state.player.tokens = state.player.tokens.filter(x => x.id !== t.id);
+      saveState();
+      render();
+    });
+
+    const [minus, plus] = div.querySelectorAll("button.secondary");
+    minus.addEventListener("click", () => {
+      t.qty = Math.max(0, (Number(t.qty)||0) - 1);
+      saveState();
+      render();
+    });
+    plus.addEventListener("click", () => {
+      t.qty = (Number(t.qty)||0) + 1;
+      saveState();
+      render();
+    });
+
+    $tokensList.appendChild(div);
+  }
+}
+
+function renderBattle() {
+  // ensure dropdown matches state
+  $battleSize.value = String(state.player.battle.size || 1);
+
+  $battleSlots.innerHTML = "";
+
+  const p = state.player;
+  const size = Number(p.battle.size) || 1;
+
+  // If size > team length, we'll still show slots but they may be empty
+  for (let slotIndex = 0; slotIndex < size; slotIndex++) {
+    const slotPkId = p.battle.slots[slotIndex] || null;
+    const pk = p.team.find(x => x.id === slotPkId) || null;
+
+    const slot = document.createElement("div");
+    slot.className = "pkCard";
+
+    // dropdown options
+    const options = [
+      `<option value="">— vuoto —</option>`,
+      ...p.team.map(t => {
+        const usedElsewhere = p.battle.slots.some((id, idx) => idx !== slotIndex && id === t.id);
+        const disabled = usedElsewhere ? "disabled" : "";
+        const selected = (t.id === slotPkId) ? "selected" : "";
+        return `<option value="${t.id}" ${selected} ${disabled}>${t.name}</option>`;
+      })
+    ].join("");
+
+    slot.innerHTML = `
+      <div class="stack" style="justify-content:space-between;">
+        <div class="pill">Slot ${slotIndex + 1}</div>
+        <select id="slotSel-${slotIndex}" style="flex:1;">
+          ${options}
+        </select>
+      </div>
+
+      <div style="height:10px"></div>
+
+      ${pk ? `
+        <div class="pkArtWrap">
+          <img class="pkArt" src="${pk.artUrl || ""}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <div class="pkArt" style="display:${pk.artUrl ? "none" : "flex"}; align-items:center; justify-content:center;">
+            <span class="muted">no art</span>
+          </div>
+
+          <div style="flex:1;">
+            <div class="pkTitle">${pk.name}</div>
+            <div class="pkTypes" style="margin-top:6px;">
+              ${(pk.type1||pk.type2) ? `
+                ${pk.type1 ? `<span class="typeTag">${pk.type1}</span>` : ""}
+                ${pk.type2 ? `<span class="typeTag">${pk.type2}</span>` : ""}
+              ` : `<span class="muted">Tipo non impostato</span>`}
+            </div>
+            <div class="muted" style="margin-top:6px;">
+              HP ${pk.hpCurrent}/${pk.hpMax} • ATK ${pk.atk} • DEF ${pk.def} • SPE ${pk.spe}
+            </div>
+          </div>
+        </div>
+
+        <div class="stack" style="margin:10px 0;">
+          <button class="secondary" data-hp="-5">-5</button>
+          <button class="secondary" data-hp="-1">-1</button>
+          <button class="secondary" data-hp="+1">+1</button>
+          <button class="secondary" data-hp="+5">+5</button>
+          <button class="secondary" data-hp="KO">KO</button>
+          <button class="ghost" data-hp="MAX">HP Max</button>
+        </div>
+
+        <div class="stack" style="margin:8px 0;">
+          <div class="muted">Status:</div>
+          <div class="stack" id="battle-status-${slotIndex}"></div>
+        </div>
+      ` : `
+        <div class="muted">Seleziona un Pokémon per questo slot.</div>
+      `}
+    `;
+
+    // slot select handler
+    slot.querySelector(`#slotSel-${slotIndex}`).addEventListener("change", (e) => {
+      const val = e.target.value || null;
+      p.battle.slots[slotIndex] = val;
+      cleanBattleSlots();
+      saveState();
+      render(); // rerender to update disabled options
+    });
+
+    // hp + status handlers if pk present
+    if (pk) {
+      slot.querySelectorAll("button.secondary[data-hp], button.ghost[data-hp]").forEach(btn => {
+        const d = btn.getAttribute("data-hp");
+        btn.addEventListener("click", () => {
+          if (d === "KO") pk.hpCurrent = 0;
+          else if (d === "MAX") pk.hpCurrent = pk.hpMax;
+          else {
+            const delta = Number(d);
+            pk.hpCurrent = clamp((Number(pk.hpCurrent)||0) + delta, 0, pk.hpMax);
+          }
+          saveState();
+          render();
+        });
+      });
+
+      const statusWrap = slot.querySelector(`#battle-status-${slotIndex}`);
+      statusWrap.innerHTML = "";
+      for (const s of Statuses) {
+        const chip = document.createElement("div");
+        chip.className = "chip" + (pk.status?.[s.key] ? " active" : "");
+        chip.textContent = s.label;
+        chip.addEventListener("click", () => {
+          pk.status[s.key] = !pk.status[s.key];
+          saveState();
+          render();
+        });
+        statusWrap.appendChild(chip);
+      }
+    }
+
+    $battleSlots.appendChild(slot);
+  }
+}
+
+function render() {
+  $playerName.value = state.player.name || "Allenatore";
+
+  renderBadges();
+  renderCities();
+
+  renderTeam();
+  renderItems();
+  renderTokens();
+
+  cleanBattleSlots();
+  renderBattle();
+}
+
+render();
+</script>
+</body>
+</html>
